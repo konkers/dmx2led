@@ -18,30 +18,22 @@ mod app {
     #[cfg(feature = "semihosting")]
     use cortex_m_semihosting::hprintln;
     use hal::target_device::SYST;
-    use hal::time::Hertz;
     use rtic::Monotonic;
 
-    use core::task::Poll;
-
     use bsp::hal;
-    use embedded_hal::serial::Write;
     use hal::clock::{ClockGenId, ClockSource, GenericClockController};
     use hal::dmac::{
         BufferPair, Busy, CallbackStatus, Ch0, Channel, DmaController, PriorityLevel, Ready,
         Transfer,
     };
-    use hal::gpio::v2::{
-        AlternateD, Pin, PushPullOutput, PA08, PA09, PA10, PA11, PB10, PB11, PB22, PB23,
-    };
+    use hal::gpio::v2::{PA10, PA11, PB10, PB11};
     use hal::pac::Peripherals;
     use hal::prelude::*;
     use hal::rtc::{Count32Mode, Rtc};
-    use hal::sercom::v2::pad::{Pad0, Pad1, Pad3};
     use hal::sercom::v2::spi::{self, Master};
-    use hal::sercom::v2::uart::{self, BaudMode, Duplex, EightBit, Oversampling, RxDuplex};
+    use hal::sercom::v2::uart::{self, BaudMode, Duplex, EightBit, Oversampling};
     use hal::sercom::v2::{Sercom2, Sercom4};
     use hal::typelevel::NoneT;
-    use nb::block;
     use rtic_monotonic::Extensions;
 
     use crate::ws2812;
@@ -55,7 +47,7 @@ mod app {
     type SpiConfig = spi::Config<SpiPads, Master>;
     type Spi = spi::Spi<SpiConfig>;
 
-    // SERCOM5 is the UART for the feather board
+    // SERCOM2 is the UART for the feather board
     type Pads = uart::PadsFromIds<Sercom2, PA11, PA10>;
     type UartConfig = uart::Config<Pads, EightBit>;
     type Uart = uart::Uart<UartConfig, Duplex>;
@@ -63,7 +55,6 @@ mod app {
     #[local]
     struct Local {
         opt_spi_chan_buf: Option<(Spi, Channel<Ch0, Ready>, &'static mut [u8])>,
-        opt_last: Option<u32>,
         dmx_index: u16,
     }
 
@@ -83,51 +74,41 @@ mod app {
             Transfer<Channel<Ch0, Busy>, BufferPair<&'static mut [u8], Spi>, fn(CallbackStatus)>,
         >,
 
+        // Need a lockless reader/writer buffer here
         #[lock_free]
         buf: [u8; 3],
     }
 
-    // const MONO_FREQ: u32 = 48_000_000;
-    //#[monotonic(binds = SysTick, default = true)]
-    //type MyMono = DwtSystick<FREQ>;
     #[monotonic(binds = RTC, default = true)]
     type RtcMonotonic = Rtc<Count32Mode>;
 
     #[init]
     fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
         #[cfg(feature = "semihosting")]
-        hprintln!("hello");
+        hprintln!("dmx2led");
 
         let mut peripherals: Peripherals = cx.device;
-        //let pins = bsp::Pins::new(peripherals.PORT);
         let mut clocks = GenericClockController::with_external_32kosc(
             peripherals.GCLK,
             &mut peripherals.PM,
             &mut peripherals.SYSCTRL,
             &mut peripherals.NVMCTRL,
         );
+
         let gclk0 = clocks.gclk0();
-        let freq: Hertz = gclk0.into();
-        #[cfg(feature = "semihosting")]
-        hprintln!("gclk0 {:?}", freq).ok();
         let rtc_clock_src = clocks
             .configure_gclk_divider_and_source(ClockGenId::GCLK2, 1, ClockSource::XOSC32K, false)
             .unwrap();
         clocks.configure_standby(ClockGenId::GCLK2, true);
         let rtc_clock = clocks.rtc(&rtc_clock_src).unwrap();
         let rtc = Rtc::count32_mode(peripherals.RTC, rtc_clock.freq(), &mut peripherals.PM);
-        #[cfg(feature = "semihosting")]
-        hprintln!("rtc {:?}", rtc_clock.freq()).ok();
-        let timer_clock = clocks.tcc2_tc3(&gclk0).unwrap();
-        #[cfg(feature = "semihosting")]
-        hprintln!("timer {:?}", timer_clock.freq()).ok();
+
         let mut dmac = DmaController::init(peripherals.DMAC, &mut peripherals.PM);
         let channels = dmac.split();
         let chan0 = channels.0.init(PriorityLevel::LVL0);
 
         let pins = bsp::Pins::new(peripherals.PORT);
         let mut red_led: bsp::RedLed = pins.d13.into();
-
         red_led.set_low().unwrap();
 
         let clock = clocks.sercom4_core(&gclk0).unwrap();
@@ -154,26 +135,23 @@ mod app {
         .stop_bits(uart::StopBits::TwoBits)
         .enable();
 
-        uart.enable_interrupts(uart::Flags::RXBRK | uart::Flags::ERROR | uart::Flags::RXC);
+        uart.enable_interrupts(uart::Flags::RXC);
 
         let buf: &'static mut [u8; BUF_LEN] =
             cortex_m::singleton!(: [u8; BUF_LEN] = [0x00; BUF_LEN]).unwrap();
+
         // We can use the RTC in standby for maximum power savings
         //core.SCB.set_sleepdeep();
 
-        // Start the blink task
-        //blink::spawn().unwrap();
+        // blink task is causing the LED strip to flash.  Need to
+        // sort out the conflict.
+        // blink::spawn().unwrap();
+
+        // Start the LED scan out.
         send_leds::spawn().unwrap();
 
         let mut sys_tick = cx.core.SYST;
 
-        #[cfg(feature = "semihosting")]
-        hprintln!(
-            "{} {}",
-            SYST::get_ticks_per_10ms(),
-            92 * SYST::get_ticks_per_10ms() / 10000
-        )
-        .ok();
         sys_tick.disable_counter();
         sys_tick.set_reload(200 * SYST::get_ticks_per_10ms() / 10000 * 8);
         sys_tick.clear_current();
@@ -189,7 +167,6 @@ mod app {
             },
             Local {
                 opt_spi_chan_buf: Some((spi, chan0, buf)),
-                opt_last: None,
                 dmx_index: 0,
             },
             init::Monotonics(rtc),
@@ -198,8 +175,7 @@ mod app {
 
     #[task(shared = [red_led])]
     fn blink(mut ctx: blink::Context) {
-        // If the LED were a local resource, the lock would not be necessary
-        // ctx.shared.red_led.lock(|led| led.toggle().unwrap());
+        ctx.shared.red_led.lock(|led| led.toggle().unwrap());
         blink::spawn_after(1_u32.seconds()).ok();
     }
 
@@ -208,13 +184,10 @@ mod app {
         ctx.shared.opt_transfer.as_mut().unwrap().callback();
     }
 
-    #[task(binds = SERCOM2, shared = [red_led, sys_tick, uart, buf], local = [opt_last, dmx_index])]
+    #[task(binds = SERCOM2, shared = [ sys_tick, uart, buf], local = [ dmx_index])]
     fn sercom0_irq(mut ctx: sercom0_irq::Context) {
-        let now = SYST::get_current();
-        let mut set_led_high = false;
-        let opt_last = *ctx.local.opt_last;
-        let mut dmx_index = ctx.local.dmx_index;
-        let mut sys_tick = ctx.shared.sys_tick;
+        let dmx_index = ctx.local.dmx_index;
+        let sys_tick = ctx.shared.sys_tick;
         let buf = ctx.shared.buf;
         ctx.shared.uart.lock(|uart| {
             let flags = uart.read_flags();
@@ -225,7 +198,7 @@ mod app {
                     *dmx_index = 0;
                 }
                 if *dmx_index > 1 {
-                    let dmx_addr = *dmx_index - 2;
+                    let dmx_addr = *dmx_index - 1;
                     if dmx_addr == DMX_ADDR {
                         buf[0] = data as u8;
                     }
@@ -244,22 +217,9 @@ mod app {
                 sys_tick.enable_counter();
             }
 
-            if flags.contains(uart::Flags::RXBRK) {
-                //set_led_high = true;
-            }
-            if flags.contains(uart::Flags::ERROR) {
-                //set_led_high = true;
-                if status.contains(uart::Status::FERR) {}
-            }
             uart.clear_status(status);
             uart.clear_flags(flags);
         });
-
-        *ctx.local.opt_last = Some(now);
-
-        if set_led_high {
-            ctx.shared.red_led.lock(|led| led.set_high().unwrap());
-        }
     }
 
     #[task(shared = [opt_transfer, buf], local = [opt_spi_chan_buf])]
