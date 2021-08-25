@@ -24,15 +24,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "atomic-polyfill"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a93ba5d6053837dbb76fd0ae26fd4f0c1859a008a783b0ce072b797c07f0f27"
-dependencies = [
- "cortex-m 0.7.3",
-]
-
-[[package]]
 name = "atsamd-hal"
 version = "0.12.0"
 dependencies = [
@@ -85,16 +76,6 @@ name = "bare-metal"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fe8f5a8a398345e52358e18ff07cc17a568fbca5c6f73873d3a62056309603"
-
-[[package]]
-name = "bitbang-hal"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "470e1522d257e4c76245980d27d5d279442cb18955cc6341249b904074033f4a"
-dependencies = [
- "embedded-hal",
- "nb 0.1.3",
-]
 
 [[package]]
 name = "bitfield"
@@ -190,7 +171,7 @@ dependencies = [
  "cortex-m 0.7.3",
  "cortex-m-rtic-macros",
  "generic-array 0.14.4",
- "heapless 0.6.1",
+ "heapless",
  "rtic-core",
  "rtic-monotonic",
  "version_check",
@@ -255,13 +236,11 @@ name = "firmware"
 version = "0.1.0"
 dependencies = [
  "atsamd-hal",
- "bitbang-hal",
  "cortex-m 0.7.3",
  "cortex-m-rt 0.7.0",
  "cortex-m-rtic",
  "cortex-m-semihosting",
  "feather_m0",
- "heapless 0.7.5",
  "panic-halt",
  "panic-semihosting",
  "rtic-monotonic",
@@ -305,15 +284,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hash32"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0c35f58762feb77d74ebe43bdbc3210f09be9fe6742234d573bacc26ed92b67"
-dependencies = [
- "byteorder",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -327,18 +297,7 @@ checksum = "634bd4d29cbf24424d0a4bfcbf80c6960129dc24424752a7d1d1390607023422"
 dependencies = [
  "as-slice",
  "generic-array 0.14.4",
- "hash32 0.1.1",
- "stable_deref_trait",
-]
-
-[[package]]
-name = "heapless"
-version = "0.7.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50530280e9a947b192e3a30a9d7bcead527b22da30ff7cbd334233d820aaf82a"
-dependencies = [
- "atomic-polyfill",
- "hash32 0.2.1",
+ "hash32",
  "stable_deref_trait",
 ]
 
