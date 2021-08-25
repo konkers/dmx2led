@@ -1,0 +1,6 @@
+[submodule "firmware/third_party/ws2812-spi-rs"]
+	path = firmware/third_party/ws2812-spi-rs
+	url = https://github.com/smart-leds-rs/ws2812-spi-rs.git
+[submodule "firmware/third_party/atsamd"]
+	path = firmware/third_party/atsamd
+	url = https://github.com/konkers/atsamd.git
